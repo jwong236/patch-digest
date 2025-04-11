@@ -7,11 +7,11 @@ import google.generativeai as genai
 import os
 from dateutil import parser
 
-# Configure Gemini AI
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyC5kYEKx1oy8mCPgOOciqMTg2nt8u10w-Y")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise ValueError("Missing GEMINI_API_KEY environment variable")
 genai.configure(api_key=GEMINI_API_KEY)
 
-# Handle OPTIONS request for CORS preflight
 @app.route("/api/summarize", methods=["OPTIONS"])
 def handle_options():
     return "", 200
@@ -27,39 +27,27 @@ def summarize_updates():
     cutoff_date_str = data.get("cutoff_date")
     
     try:
-        # Fetch the webpage content
         response = requests.get(url)
         response.raise_for_status()
         
-        # Parse the HTML
         soup = BeautifulSoup(response.text, "html.parser")
         
-        # Extract text content (this is a simple approach - can be improved for specific sites)
-        # Remove script and style elements
         for script in soup(["script", "style"]):
             script.extract()
         
-        # Get text
         text = soup.get_text()
         
-        # Break into lines and remove leading and trailing space on each
         lines = (line.strip() for line in text.splitlines())
-        # Break multi-headlines into a line each
         chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-        # Remove blank lines
         text = "\n".join(chunk for chunk in chunks if chunk)
         
-        # Filter by date if cutoff date is provided
         if cutoff_date_str:
             try:
                 cutoff_date = parser.parse(cutoff_date_str)
-                # This is a simplified approach - in a real app, you'd need more sophisticated date extraction
-                # For MVP, we'll just pass the text to the AI and let it handle the filtering
                 text = f"Please summarize updates since {cutoff_date_str}. Here's the content: {text}"
             except:
                 return jsonify({"error": "Invalid date format"}), 400
         
-        # Generate summary using Gemini AI
         model = genai.GenerativeModel('gemini-1.5-pro')
         
         prompt = f"""

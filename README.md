@@ -45,8 +45,14 @@ A simple web application that summarizes product updates and patch notes from an
 
 4. Create a `.env` file with your Gemini AI API key:
    ```
-   GEMINI_API_KEY=your_gemini_api_key
+   # Copy the example file
+   cp .env.example .env
+   
+   # Then edit .env and add your actual API key
+   GEMINI_API_KEY=your_actual_api_key_here
    ```
+
+   > **Important**: The `.env` file contains sensitive information and is not committed to the repository. Make sure to keep your API key secure.
 
 5. Run the backend server:
    ```

@@ -1,5 +1,9 @@
+# Environment variables
+.env
+backend/.env
+frontend/.env
 
-# Python Backend
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
