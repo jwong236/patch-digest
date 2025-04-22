@@ -17,7 +17,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 REQUESTS_PER_MINUTE = 30
 REQUESTS_PER_DAY = 1000000
-TOKENS_PER_REQUEST = 1500
+MAX_PATCH_NOTES = 1
 
 
 class APIRateLimiter:
@@ -60,14 +60,6 @@ rate_limiter = APIRateLimiter()
 def call_gemini_with_retry(prompt, max_retries=3):
     model = genai.GenerativeModel("gemini-2.0-flash-lite")
 
-    estimated_tokens = len(prompt.split()) * 1.3
-
-    if estimated_tokens > TOKENS_PER_REQUEST:
-        words = prompt.split()
-        truncated_words = words[: int(TOKENS_PER_REQUEST / 1.3)]
-        prompt = " ".join(truncated_words) + "... [truncated]"
-        print(f"Prompt truncated to approximately {TOKENS_PER_REQUEST} tokens")
-
     for attempt in range(max_retries):
         can_request, wait_time = rate_limiter.can_make_request()
 
@@ -103,51 +95,75 @@ def call_gemini_with_retry(prompt, max_retries=3):
             raise e
 
 
-def get_html_selectors(url):
+def verify_patch_notes_catalogue(url):
     try:
         response = requests.get(url)
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "html.parser")
 
-        prompt = f"""
-        You are an expert at analyzing HTML structure to find selectors for extracting links.
-        
-        I need you to analyze this HTML and determine TWO things:
-        
-        1. FIRST, verify if this page is a valid patch notes catalogue by looking for:
-           - Page titles or headings containing "patch notes", "release notes", "changelog", etc.
-           - Content sections about updates, patches, or releases
-           - Lists or collections of patch notes or updates
-           
-        2. SECOND, if it IS a valid patch notes catalogue, determine the CSS selectors that would help extract links to patch notes.
-           Look for patterns in the HTML that indicate links to patch notes, such as:
-           - Links containing words like "patch", "update", "release", "notes", "changelog"
-           - Links within sections titled "Updates", "Releases", "Patch Notes", etc.
-           - Links with dates in their text, URL or nearby elements
-           
-           IMPORTANT: The selectors should ONLY target links to actual patch note pages, not links to other language versions or categories.
-           For example, if the page has links like:
-           - "Patch 13.10 Notes" -> INCLUDE (this is a patch note)
-           - "Patch Notes (AR)" or "Patch Notes (ES)" -> EXCLUDE (these are language selectors)
-           - "Categories" or "Tags" -> EXCLUDE (these are navigation links)
-           
-           For League of Legends specifically, look for:
-           - Links with href containing "/news/game-updates/patch-" or similar patterns
-           - Links with aria-label containing "Patch" and "Notes"
-           - Links with class names that might indicate article cards or featured content
-           - Elements with data-testid attributes like "articlefeaturedcard-component"
-        
-        Return ONLY a JSON object with these fields:
-        - "is_valid": true/false indicating if this page appears to be a valid patch notes catalogue
-        - "link_selector": The CSS selector to find the links to patch notes (only if is_valid is true)
-        - "pagination_selector": The CSS selector for the "next page" link (if pagination exists, only if is_valid is true)
-        - "verification_reason": A brief explanation of why you determined this is or isn't a patch notes catalogue
-        
-        Here's the HTML to analyze:
-        
-        {soup.prettify()[:8000]}
-        """
+        prompt = "Analyze this HTML and determine if it's a patch notes catalogue.\n\n"
+        prompt += f"HTML to analyze:\n{soup.prettify()}\n\n"
+        prompt += "Return a JSON object with: is_valid (boolean), verification_reason (string)."
+
+        result = call_gemini_with_retry(prompt)
+
+        try:
+            json_match = re.search(r"```json\s*([\s\S]*?)\s*```", result)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_str = result
+
+            verification = json.loads(json_str)
+            return verification
+
+        except json.JSONDecodeError:
+            return {
+                "error": "Failed to parse AI response as JSON",
+                "raw_response": result,
+            }
+
+    except requests.exceptions.RequestException as e:
+        return {"error": f"Failed to fetch URL: {str(e)}"}
+    except Exception as e:
+        return {"error": f"An error occurred: {str(e)}"}
+
+
+def get_html_selectors(url, reference_url=None):
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        reference_pattern = None
+        if reference_url:
+            try:
+                ref_response = requests.get(reference_url)
+                ref_response.raise_for_status()
+
+                from urllib.parse import urlparse
+
+                parsed_url = urlparse(reference_url)
+                path = parsed_url.path
+
+                if "/patch-" in path:
+                    reference_pattern = path.split("/patch-")[0] + "/patch-"
+                elif "/news/" in path:
+                    reference_pattern = "/news/"
+
+                print(f"Reference pattern extracted: {reference_pattern}")
+            except Exception as e:
+                print(f"Error extracting reference pattern: {str(e)}")
+
+        prompt = "Find CSS selectors for patch note links in this HTML.\n\n"
+
+        if reference_url and reference_pattern:
+            prompt += f"Reference URL: {reference_url}\nPattern to look for: {reference_pattern}\n\n"
+
+        prompt += f"HTML to analyze:\n{soup.prettify()}\n\n"
+        prompt += "Return a JSON object with: link_selector (string), pagination_selector (string if exists)."
 
         result = call_gemini_with_retry(prompt)
 
@@ -159,20 +175,8 @@ def get_html_selectors(url):
                 json_str = result
 
             selectors = json.loads(json_str)
-
-            if not selectors.get("is_valid", False) or not selectors.get(
-                "link_selector"
-            ):
-                if "leagueoflegends.com" in url and "patch-notes" in url:
-                    print("Using fallback selectors for League of Legends")
-                    selectors = {
-                        "is_valid": True,
-                        "link_selector": "a[href*='/news/game-updates/patch-'], a[aria-label*='Patch'][aria-label*='Notes']",
-                        "pagination_selector": "a[aria-label='Next page'], a.next-page, a[rel='next']",
-                        "verification_reason": "Fallback selectors for League of Legends patch notes",
-                    }
-
             return selectors
+
         except json.JSONDecodeError:
             return {
                 "error": "Failed to parse AI response as JSON",
@@ -189,9 +193,8 @@ def get_all_patch_note_urls(url, selectors):
     all_urls = []
     current_url = url
     page_count = 0
-    max_pages = 5
 
-    while current_url and page_count < max_pages:
+    while current_url:
         try:
             response = requests.get(current_url)
             response.raise_for_status()
@@ -231,6 +234,12 @@ def get_all_patch_note_urls(url, selectors):
             print(f"Error processing page {current_url}: {str(e)}")
             break
 
+    if len(all_urls) > MAX_PATCH_NOTES:
+        print(
+            f"Found {len(all_urls)} patch notes, limiting to {MAX_PATCH_NOTES} most recent"
+        )
+        all_urls = all_urls[:MAX_PATCH_NOTES]
+
     return all_urls
 
 
@@ -254,9 +263,17 @@ def summarize_patch_note(url):
         You are a helpful assistant that summarizes product updates and patch notes.
         Focus on key changes, additions, removals, and fixes.
         Be concise and clear.
-        
+
+        IMPORTANT FORMATTING RULES:
+        - Use only asterisks (*) for bullet points, no dashes or other markers
+        - Each main bullet should be immediately followed by its text, no extra spaces
+        - Each sub-bullet should be indented with exactly 4 spaces
+        - No empty lines between bullets
+        - No trailing spaces
+        - No newlines within bullet text (use single line format)
+
         Here's the content to summarize:
-        
+
         {text[:8000]}
         """
 
@@ -283,19 +300,32 @@ def summarize_updates():
         return jsonify({"error": "URL is required"}), 400
 
     url = data["url"]
+    reference_url = data.get("reference_url")
 
-    selectors = get_html_selectors(url)
+    verification = verify_patch_notes_catalogue(url)
+
+    if "error" in verification:
+        return jsonify({"error": verification["error"]}), 400
+
+    if not verification.get("is_valid", False):
+        return (
+            jsonify(
+                {
+                    "error": "The provided URL does not appear to be a valid patch notes catalogue",
+                    "reason": verification.get("verification_reason", "Unknown reason"),
+                }
+            ),
+            400,
+        )
+
+    selectors = get_html_selectors(url, reference_url)
 
     if "error" in selectors:
         return jsonify({"error": selectors["error"]}), 400
 
-    if not selectors.get("is_valid", False):
+    if not selectors.get("link_selector"):
         return (
-            jsonify(
-                {
-                    "error": "The provided URL does not appear to be a valid patch notes catalogue"
-                }
-            ),
+            jsonify({"error": "Could not determine selectors for patch note links"}),
             400,
         )
 
@@ -303,11 +333,6 @@ def summarize_updates():
 
     if not patch_note_urls:
         return jsonify({"error": "No patch note links found in the catalogue"}), 400
-
-    max_patch_notes = 3
-    if len(patch_note_urls) > max_patch_notes:
-        patch_note_urls = patch_note_urls[:max_patch_notes]
-        print(f"Limiting to {max_patch_notes} patch notes to avoid rate limits")
 
     summaries = []
     for patch_url in patch_note_urls:

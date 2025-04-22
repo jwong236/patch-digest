@@ -1,92 +1,163 @@
-import { useState } from 'react'
-import './App.css'
+import React, { useState, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
+import "./App.css";
 
 function App() {
-  const [url, setUrl] = useState('')
-  const [cutoffDate, setCutoffDate] = useState('')
-  const [summary, setSummary] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [url, setUrl] = useState("");
+  const [referenceUrl, setReferenceUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [loadingDots, setLoadingDots] = useState(0);
+  const [error, setError] = useState(null);
+  const [summaries, setSummaries] = useState([]);
+
+  useEffect(() => {
+    let interval;
+    if (loading) {
+      interval = setInterval(() => {
+        setLoadingDots((prev) => (prev + 1) % 4);
+      }, 500);
+    } else {
+      setLoadingDots(0);
+    }
+    return () => clearInterval(interval);
+  }, [loading]);
 
   const handleSubmit = async (e) => {
-    e.preventDefault()
-    setLoading(true)
-    setError('')
-    setSummary('')
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setSummaries([]);
 
     try {
-      const response = await fetch('http://localhost:5000/api/summarize', {
-        method: 'POST',
+      const response = await fetch("http://localhost:5000/api/summarize", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({
+        body: JSON.stringify({ 
           url,
-          cutoff_date: cutoffDate || undefined,
+          reference_url: referenceUrl || undefined
         }),
-      })
+      });
+
+      const data = await response.json();
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || `Server error: ${response.status}`)
+        throw new Error(data.error || "Failed to fetch summaries");
       }
 
-      const data = await response.json()
-      setSummary(data.summary)
+      setSummaries(data.patch_notes);
     } catch (err) {
-      console.error('Error:', err)
-      setError(err.message || 'An error occurred while fetching the summary')
+      setError(err.message);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
+
+  const processMarkdown = (text) => {
+    if (!text) return "";
+    
+    const lines = text.split('\n');
+    const processedLines = [];
+    
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i];
+      
+      if (line.trim().startsWith('*')) {
+        const leadingSpaces = line.match(/^\s*/)[0].length;
+        const indentLevel = Math.floor(leadingSpaces / 4);
+        
+        line = ' '.repeat(indentLevel * 4) + line.trim();
+      }
+      
+      processedLines.push(line);
+    }
+    
+    return processedLines.join('\n');
+  };
 
   return (
-    <div className="container">
-      <h1>Product Update Summarizer</h1>
-      <p className="description">
-        Enter a product update or patch notes URL to get a concise summary of the changes.
-      </p>
+    <div className="app-container">
+      <div className="content-container">
+        <h1>Patch Digest</h1>
+        <p className="description">
+          Enter a patch notes catalogue URL to get AI-generated summaries of recent updates.
+        </p>
 
-      <form onSubmit={handleSubmit} className="form">
-        <div className="form-group">
-          <label htmlFor="url">Update URL</label>
-          <input
-            type="url"
-            id="url"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://example.com/product-updates"
-            required
-          />
-        </div>
+        <form onSubmit={handleSubmit} className="form">
+          <div className="form-group">
+            <div className="input-with-tooltip">
+              <input
+                type="url"
+                id="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="Patch notes catalogue URL"
+                required
+                className="url-input"
+              />
+              <div className="tooltip-icon">?
+                <span className="tooltip-text">
+                  A patch notes catalogue is a webpage that contains links to multiple patch notes.
+                  Examples: League of Legends updates page, game news sections, etc.
+                </span>
+              </div>
+            </div>
+          </div>
 
-        <div className="form-group">
-          <label htmlFor="cutoff-date">Summarize updates since (optional)</label>
-          <input
-            type="date"
-            id="cutoff-date"
-            value={cutoffDate}
-            onChange={(e) => setCutoffDate(e.target.value)}
-          />
-        </div>
+          <div className="form-group">
+            <div className="input-with-tooltip">
+              <input
+                type="url"
+                id="reference-url"
+                value={referenceUrl}
+                onChange={(e) => setReferenceUrl(e.target.value)}
+                placeholder="Reference patch note URL (optional)"
+                className="url-input"
+              />
+              <div className="tooltip-icon">?
+                <span className="tooltip-text">
+                  Providing a specific patch note URL helps identify similar links in the catalogue.
+                  This can improve accuracy when the catalogue structure is complex.
+                </span>
+              </div>
+            </div>
+          </div>
 
-        <button type="submit" disabled={loading}>
-          {loading ? 'Summarizing...' : 'Summarize Updates'}
-        </button>
-      </form>
+          <button type="submit" disabled={loading} className="submit-button">
+            {loading ? `Summarizing${".".repeat(loadingDots)}` : "Summarize Updates"}
+          </button>
+        </form>
 
-      {error && <div className="error">{error}</div>}
+        {error && <div className="error-message">{error}</div>}
 
-      {summary && (
-        <div className="summary-container">
-          <h2>Summary</h2>
-          <div className="summary">{summary}</div>
-        </div>
-      )}
+        {summaries.length > 0 && (
+          <div className="summaries-container">
+            {summaries.map((summary, index) => (
+              <div key={index} className="summary-card">
+                <h2>Patch Notes Summary</h2>
+                <div className="summary-content">
+                  <ReactMarkdown>
+                    {processMarkdown(summary.summary)}
+                  </ReactMarkdown>
+                </div>
+                <div className="summary-footer">
+                  <a
+                    href={summary.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="source-link"
+                  >
+                    View Original
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
