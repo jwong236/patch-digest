@@ -2,13 +2,34 @@ import React, { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import "./App.css";
 
+function AccordionItem({ title, children, isOpen, onToggle }) {
+  return (
+    <div className="accordion-item">
+      <div 
+        className={`accordion-header ${isOpen ? 'open' : ''}`} 
+        onClick={onToggle}
+      >
+        <h3>{title}</h3>
+        <span className="accordion-icon">{isOpen ? '▼' : '▶'}</span>
+      </div>
+      {isOpen && (
+        <div className="accordion-content">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App() {
   const [url, setUrl] = useState("");
   const [referenceUrl, setReferenceUrl] = useState("");
+  const [maxPatchNotes, setMaxPatchNotes] = useState(3);
   const [loading, setLoading] = useState(false);
   const [loadingDots, setLoadingDots] = useState(0);
   const [error, setError] = useState(null);
   const [summaries, setSummaries] = useState([]);
+  const [openAccordions, setOpenAccordions] = useState({});
 
   useEffect(() => {
     let interval;
@@ -27,6 +48,7 @@ function App() {
     setLoading(true);
     setError(null);
     setSummaries([]);
+    setOpenAccordions({});
 
     try {
       const response = await fetch("http://localhost:5000/api/summarize", {
@@ -36,7 +58,8 @@ function App() {
         },
         body: JSON.stringify({ 
           url,
-          reference_url: referenceUrl || undefined
+          reference_url: referenceUrl || undefined,
+          max_patch_notes: maxPatchNotes
         }),
       });
 
@@ -47,6 +70,11 @@ function App() {
       }
 
       setSummaries(data.patch_notes);
+      
+      // Set the first accordion to be open by default
+      if (data.patch_notes.length > 0) {
+        setOpenAccordions({ 0: true });
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -74,6 +102,27 @@ function App() {
     }
     
     return processedLines.join('\n');
+  };
+
+  const toggleAccordion = (index) => {
+    setOpenAccordions(prev => ({
+      ...prev,
+      [index]: !prev[index]
+    }));
+  };
+
+  const formatTitle = (summary) => {
+    if (summary.title) {
+      let title = summary.title;
+      if (summary.date) {
+        title += ` (${summary.date})`;
+      }
+      if (summary.version) {
+        title += ` - ${summary.version}`;
+      }
+      return title;
+    }
+    return "Patch Notes Summary";
   };
 
   return (
@@ -124,6 +173,29 @@ function App() {
             </div>
           </div>
 
+          <div className="form-group">
+            <div className="input-with-tooltip">
+              <select
+                id="max-patch-notes"
+                value={maxPatchNotes}
+                onChange={(e) => setMaxPatchNotes(parseInt(e.target.value))}
+                className="url-input"
+              >
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
+                  <option key={num} value={num}>
+                    {num} {num === 1 ? 'Patch Note' : 'Patch Notes'}
+                  </option>
+                ))}
+              </select>
+              <div className="tooltip-icon">?
+                <span className="tooltip-text">
+                  Select how many patch notes you want to summarize.
+                  More patch notes will take longer to process.
+                </span>
+              </div>
+            </div>
+          </div>
+
           <button type="submit" disabled={loading} className="submit-button">
             {loading ? `Summarizing${".".repeat(loadingDots)}` : "Summarize Updates"}
           </button>
@@ -134,8 +206,12 @@ function App() {
         {summaries.length > 0 && (
           <div className="summaries-container">
             {summaries.map((summary, index) => (
-              <div key={index} className="summary-card">
-                <h2>Patch Notes Summary</h2>
+              <AccordionItem 
+                key={index}
+                title={formatTitle(summary)}
+                isOpen={openAccordions[index] || false}
+                onToggle={() => toggleAccordion(index)}
+              >
                 <div className="summary-content">
                   <ReactMarkdown>
                     {processMarkdown(summary.summary)}
@@ -151,7 +227,7 @@ function App() {
                     View Original
                   </a>
                 </div>
-              </div>
+              </AccordionItem>
             ))}
           </div>
         )}

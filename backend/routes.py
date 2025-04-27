@@ -17,7 +17,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 REQUESTS_PER_MINUTE = 30
 REQUESTS_PER_DAY = 1000000
-MAX_PATCH_NOTES = 1
+MAX_PATCH_NOTES = 10
 
 
 class APIRateLimiter:
@@ -259,7 +259,34 @@ def summarize_patch_note(url):
         chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
         text = "\n".join(chunk for chunk in chunks if chunk)
 
-        prompt = f"""
+        # Extract title, date, and patch note number
+        title_prompt = f"""
+        Analyze this patch note content and extract:
+        1. The title of the patch note
+        2. The date of the patch note (if available)
+        3. The patch note number or version (if available)
+
+        Return a JSON object with these fields: title, date, version.
+        If any field cannot be determined, use null.
+
+        Content to analyze:
+        {text[:2000]}
+        """
+
+        metadata = call_gemini_with_retry(title_prompt)
+
+        try:
+            json_match = re.search(r"```json\s*([\s\S]*?)\s*```", metadata)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_str = metadata
+
+            metadata_obj = json.loads(json_str)
+        except json.JSONDecodeError:
+            metadata_obj = {"title": None, "date": None, "version": None}
+
+        summary_prompt = f"""
         You are a helpful assistant that summarizes product updates and patch notes.
         Focus on key changes, additions, removals, and fixes.
         Be concise and clear.
@@ -277,9 +304,15 @@ def summarize_patch_note(url):
         {text[:8000]}
         """
 
-        summary = call_gemini_with_retry(prompt)
+        summary = call_gemini_with_retry(summary_prompt)
 
-        return {"url": url, "summary": summary}
+        return {
+            "url": url,
+            "summary": summary,
+            "title": metadata_obj.get("title"),
+            "date": metadata_obj.get("date"),
+            "version": metadata_obj.get("version"),
+        }
 
     except requests.exceptions.RequestException as e:
         return {"url": url, "error": f"Failed to fetch URL: {str(e)}"}
@@ -301,6 +334,9 @@ def summarize_updates():
 
     url = data["url"]
     reference_url = data.get("reference_url")
+    max_patch_notes = min(
+        int(data.get("max_patch_notes", MAX_PATCH_NOTES)), MAX_PATCH_NOTES
+    )
 
     verification = verify_patch_notes_catalogue(url)
 
@@ -333,6 +369,12 @@ def summarize_updates():
 
     if not patch_note_urls:
         return jsonify({"error": "No patch note links found in the catalogue"}), 400
+
+    if len(patch_note_urls) > max_patch_notes:
+        print(
+            f"Found {len(patch_note_urls)} patch notes, limiting to {max_patch_notes} most recent"
+        )
+        patch_note_urls = patch_note_urls[:max_patch_notes]
 
     summaries = []
     for patch_url in patch_note_urls:
