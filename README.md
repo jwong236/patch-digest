@@ -1,92 +1,39 @@
-# Product Update Summarizer
+# Patch Digest
 
-A simple web application that summarizes product updates and patch notes from any URL.
+A web application that provides concise summaries of product updates and patch notes using AI.
 
 ## Features
 
-- **Single URL Processing**: Submit a product update or patch notes URL to get a summary
-- **Basic Content Extraction**: Extract text content from the provided URL
-- **Simple Date Filtering**: Filter content based on a cutoff date
-- **Summary Generation**: Use AI to generate a concise summary of the updates
-- **Single-Page Experience**: Simple web interface with URL input field and date selector
+- Summarizes product updates and patch notes from any URL using Google's Gemini AI
+- Clean, modern UI
+- Real-time processing of content
+- Responsive design for all devices
 
-## Tech Stack
+## Live Demo
 
-- **Frontend**: React, Vite
-- **Backend**: Flask, Python
-- **AI**: Google Gemini AI
-- **Web Scraping**: BeautifulSoup4, Requests
+The application is live and can be accessed at:
+https://patch-digest-344920797300.us-central1.run.app
 
-## Setup
+## How It Works
 
-### Prerequisites
+1. Enter a URL to a patch notes catalogue (a webpage containing links to multiple patch notes)
+2. Optionally provide a reference patch note URL to help identify similar links
+3. Select how many patch notes you want to summarize (up to 10)
+4. Click "Summarize Updates" to generate concise summaries
+5. View the AI-generated summaries in an accordion format
 
-- Node.js (v14+)
-- Python (v3.8+)
-- Google Gemini AI API key
+## Deployment
 
-### Backend Setup
+The application is deployed using Google Cloud Run. The deployment process is automated using Cloud Build.
 
-1. Navigate to the backend directory:
-   ```
-   cd backend
-   ```
+### Architecture
 
-2. Create a virtual environment and activate it:
-   ```
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+- Frontend: React + Vite
+- Backend: Flask
+- AI: Google Gemini API
+- Deployment: Google Cloud Run
+- Secrets Management: Google Secret Manager
 
-3. Install dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
+## License
 
-4. Create a `.env` file with your Gemini AI API key:
-   ```
-   # Copy the example file
-   cp .env.example .env
-   
-   # Then edit .env and add your actual API key
-   GEMINI_API_KEY=your_actual_api_key_here
-   ```
-
-   > **Important**: The `.env` file contains sensitive information and is not committed to the repository. Make sure to keep your API key secure.
-
-5. Run the backend server:
-   ```
-   python app.py
-   ```
-
-### Frontend Setup
-
-1. Navigate to the frontend directory:
-   ```
-   cd frontend
-   ```
-
-2. Install dependencies:
-   ```
-   npm install
-   ```
-
-3. Run the development server:
-   ```
-   npm run dev
-   ```
-
-## Usage
-
-1. Open your browser and navigate to `http://localhost:5173`
-2. Enter a product update or patch notes URL
-3. Optionally, select a cutoff date to filter updates
-4. Click "Summarize Updates" to generate a summary
-
-## Future Enhancements
-
-- Support for multiple URLs
-- Database of existing products
-- User accounts and history tracking
-- More sophisticated content extraction for specific sites
-- Advanced date filtering and parsing 
+This project is licensed under the MIT License - see the LICENSE file for details. 
