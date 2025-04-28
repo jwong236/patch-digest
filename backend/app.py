@@ -2,6 +2,8 @@ from flask import Flask, jsonify, send_from_directory
 from dotenv import load_dotenv
 import os
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 load_dotenv()
 
@@ -15,6 +17,14 @@ CORS(
             "allow_headers": ["Content-Type"],
         }
     },
+)
+
+# Configure rate limiting
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["1000 per day", "100 per hour"],
+    storage_uri="memory://",
 )
 
 import routes

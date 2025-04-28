@@ -1,4 +1,4 @@
-from app import app
+from app import app, limiter
 from flask import request, jsonify
 import requests
 from bs4 import BeautifulSoup
@@ -326,6 +326,8 @@ def handle_options():
 
 
 @app.route("/api/summarize", methods=["POST"])
+@limiter.limit("30 per minute")
+@limiter.limit("500 per day")
 def summarize_updates():
     data = request.json
 
@@ -392,4 +394,15 @@ def summarize_updates():
             "total_found": len(patch_note_urls),
             "processed": len(summaries),
         }
+    )
+
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    return (
+        jsonify(
+            error="Rate limit exceeded. Please try again later.",
+            retry_after=e.description,
+        ),
+        429,
     )
