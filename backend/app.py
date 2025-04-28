@@ -5,17 +5,36 @@ from flask_cors import CORS
 
 load_dotenv()
 
-app = Flask(__name__)
-# Configure CORS with more specific settings
-CORS(app, resources={
-    r"/api/*": {
-        "origins": ["http://localhost:5173"],
-        "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type"]
-    }
-})
+app = Flask(__name__, static_folder="static", static_url_path="")
+CORS(
+    app,
+    resources={
+        r"/api/*": {
+            "origins": ["*"],
+            "methods": ["GET", "POST", "OPTIONS"],
+            "allow_headers": ["Content-Type"],
+        }
+    },
+)
 
 import routes
 
+
+@app.route("/")
+def serve_frontend():
+    return send_from_directory(app.static_folder, "index.html")
+
+
+@app.route("/<path:path>")
+def serve_static(path):
+    return send_from_directory(app.static_folder, path)
+
+
+@app.route("/health")
+def health_check():
+    return jsonify({"status": "healthy"}), 200
+
+
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=True, host="0.0.0.0", port=port)

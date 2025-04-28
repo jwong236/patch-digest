@@ -381,8 +381,6 @@ def summarize_updates():
         try:
             summary = summarize_patch_note(patch_url)
             summaries.append(summary)
-
-            time.sleep(3)
         except Exception as e:
             print(f"Error summarizing {patch_url}: {str(e)}")
             summaries.append({"url": patch_url, "error": str(e)})
